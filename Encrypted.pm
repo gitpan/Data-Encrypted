@@ -16,7 +16,7 @@ require Fcntl;
 
 use Carp;
 
-$VERSION = '0.06';
+$VERSION = '0.07';
 @ISA = qw(Exporter);
 @EXPORT = qw();
 @EXPORT_OK = qw(encrypted encrypt finish finished);
@@ -144,7 +144,7 @@ sub encrypted {
 	$self->{_data}->{$arg} =
 	    Term::ReadPassword::read_password(ref($self) .
 					      " value for '$arg' not found," .
-					      " please enter: ");
+					      " please enter: ", 0, 1, 1);
     }
     return $self->{_data}->{$arg};
 }

@@ -1,5 +1,9 @@
 Revision history for Perl extension Data::Encrypted.
 
+0.07  Wed Dec 4
+	- make use of Term::ReadPassword's options to 1) allow Ctrl-C
+	  to terminate the entry, and 2) echo *'s during input.
+
 0.06  Tue Oct 16
 	- fixes for non-OO usage and filehandle creation/locking
 
