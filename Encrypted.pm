@@ -16,7 +16,7 @@ require Fcntl;
 
 use Carp;
 
-$VERSION = '0.04';
+$VERSION = '0.05';
 @ISA = qw(Exporter);
 @EXPORT = qw();
 @EXPORT_OK = qw(encrypted encrypt finish finished);
@@ -353,6 +353,33 @@ rememeber just what that lost database password was ...); even though
 the encrypted data is available, it will be stored anew upon each
 invocation.
 
+=head1 Storage File Locking Issues
+
+Data::Encrypted opens the storage file immediately upon specification
+(via the use statement, or new object creation), and locks it for
+exclusive use (or blocks until such a lock can be obtained).  It holds
+this lock until the object is destroyed, or the script ends.  If you
+wish the file to be closed and the lock to be released (so that other
+scripts may use the file while your program continues running), you
+should either undefine the encryption object you created, or call
+finish() if using the functional interface:
+
+# OO interface example:
+
+my $enc = new Data::Encrypted file => "~/.sharedsecrets";
+# ... use $enc->encrypted to retrieve encrypted data
+undef $enc; # done using $enc, release the file lock
+# ... continue running program
+
+__END__
+
+# functional interface example:
+
+use Data::Encrypted qw(encrypted finish), file => "~/.sharedsecrets";
+# ... use encrypted() to retrieve encrypted data
+finish(); # done getting encrypted data, release the file lock
+# ... continue running program
+
 =head1 Real Life Examples
 
 example #1 - a DBI session, utilizing virtual file storage:
@@ -383,17 +410,17 @@ data until 'reset' is removed from use statement):
   $ftp->cwd('/pub');
   [... continue using $ftp ...]
 
-example #3 - a POP3 email client session with "non-standard" RSA keys:
+example #3 - a POP3 email client session with keys in unguessable places:
 
   use Mail::POP3Client;
   use Crypt::RSA::Key;
   use Data::Encrypted;
 
   my $public = new Crypt::RSA::Key::Public::SSH
-                 Filename => '~/.ssh2/id_dsa_1024_a.pub';
+                 Filename => '~/.ssh/mykeys/public';
 
   my $public = new Crypt::RSA::Key::Private::SSH
-                 Filename => '~/.ssh2/id_dsa_1024_a'
+                 Filename => '~/.ssh/mykeys/private'
                  Password => 'The Only Good Computer Is A Dead Computer';
 
   my $encryptor = new Data::Encrypted ( FILE => './.pop3email',
@@ -412,6 +439,7 @@ files from you, without passing along your connection information in
 clear text; note that you yourself won't be able to actually use the
 script without entering the data each time.  Also note that Bob could
 easily read the encrypted information, so it is not secure from him.
+It is only secure from prying third-parties.
 
   use Data::Encrypted;
   use Net::FTP;
@@ -424,7 +452,7 @@ easily read the encrypted information, so it is not secure from him.
   $ftp->login($encryptor->encrypted('user'),
               $encryptor->encrypted('password'));
   $ftp->cwd($encryptor->encrypted(q{Bob's directory}));
-  $ftp->get($encryptor->encrypted(q{What Bob get's to download}));
+  $ftp->get($encryptor->encrypted(q{What Bob gets to download}));
   $ftp->quit();
 
 =head1 BUGS/TODO
@@ -435,7 +463,9 @@ you have to feed your virtual storage file to Data::Encrypted
 manually.  Not so much a bug as an interface drawback.
 
 Our usage of Inline::Files-generated filehandles is a bit noisy -
-Damian Conway said he'd think about trying to fix it someday.
+especially when first using "empty" virtual files (a known bug in
+Inline::Files).  Damian Conway has said he'd think about trying to fix
+it someday.
 
 This idea could be extended to the Tie::EncryptedHash or other
 Crypt::CBC-employing methodology, but would lose the fundamental
@@ -444,9 +474,21 @@ remain associated with the script.  Perhaps people wouldn't mind
 typing one "universal" password or passphrase to get at their saved,
 encrypted data ... ?
 
-When Data::Encrypted prompts for unknown data, it should really ask
-the user to repeat their data entry for validation, to cut down on the
+When Data::Encrypted prompts for unknown data, it could ask the user
+to repeat their data entry for validation, to cut down on the
 possibility of typos.
+
+Currently the data is keyed via the prompt - hence if you use the same
+prompt twice, the second piece of data will overwrite the first.
+
+The data could be made to be "application-specific", so that the same
+encrypted data storage file could be used for multiple applications
+(without overwriting each other's data).  This could be as simple as
+adding an additional dimenion to the hash, keying on $0 ...
+
+When someone calls finish(), we close everything up ... but when
+encrypted() is called, we don't ever check whether we've already
+called finish, so this behavior is, uhmm, undefined I guess.
 
 =head1 COPYRIGHT
 
