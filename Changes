@@ -1,5 +1,8 @@
 Revision history for Perl extension Data::Encrypted.
 
+0.06  Tue Oct 16
+	- fixes for non-OO usage and filehandle creation/locking
+
 0.05  Wed Jun 12
 	- documentation fixes
 

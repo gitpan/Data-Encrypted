@@ -16,14 +16,13 @@ require Fcntl;
 
 use Carp;
 
-$VERSION = '0.05';
+$VERSION = '0.06';
 @ISA = qw(Exporter);
 @EXPORT = qw();
 @EXPORT_OK = qw(encrypted encrypt finish finished);
 
 my $RESET = 0;
 my ($FILE, $FH);
-my $MYSELF;
 my ($PK, $SK, $PW);
 
 sub import {
@@ -58,16 +57,21 @@ sub _get_args {
 	    splice(@_, $i--, 2);
 	}
     }
+
     return @_;
 }
 
 sub new {
 
-    @_ = _get_args(@_);
-
     my $class = shift;
     $class = ref $class || $class;
     my $self = bless {}, $class;
+
+    _get_args(@_);
+
+    unless (defined $FH) {
+	_get_filehandle()
+    }
 
     $self->{_public} = ref $PK ? $PK : new Crypt::RSA::Key::Public::SSH
 	Filename => $PK || (File::HomeDir::home() . '/.ssh/identity.pub');
@@ -76,7 +80,6 @@ sub new {
 	 Password => $PW );
 
     $self->{_rsa} = new Crypt::RSA;
-    $self->{_myself} = \$MYSELF;
 
     return $self;
 }
@@ -97,30 +100,23 @@ sub _get_filehandle {
 	$FILE =~ s/^~$user/$path/;
     }
 
-    sysopen(FH, $FILE, Fcntl::O_RDWR() | Fcntl::O_CREAT() ) or croak "Can't open $FILE: $!";
-    flock(FH, Fcntl::LOCK_EX()) or croak "Can't flock file: $!";
+    sysopen(FH, $FILE, Fcntl::O_RDWR() | Fcntl::O_CREAT() )
+	or croak "Can't open $FILE: $!";
+    flock(FH, Fcntl::LOCK_EX())
+	or croak "Can't flock file: $!";
     $FH = \*FH;
 }
-
-sub finished {
-
-    my $self = shift;
-    unless (ref $self) {
-	$self = $MYSELF;
-    }
-    undef $MYSELF; # call DESTROY to unlock file/fh!
-}
-
-*finish = \&finished;
 
 sub encrypted {
 
     my $self = shift;
     my $arg = shift;
-    unless (defined $arg && ref $self) {
-	$MYSELF = Data::Encrypted->new($arg, @_);
-	($self, $arg) = ($MYSELF, $self);
+
+    unless (ref $self) {
+	my $newself = Data::Encrypted->new(defined $arg ? $arg : (), @_);
+	($self, $arg) = ($newself, $self);
     }
+
     unless ($arg) {
 	croak "Must supply argument to encrypted!";
     }
@@ -155,19 +151,32 @@ sub encrypted {
     
 *encrypt = \&encrypted;
 
+sub finished {
+
+    if ($FH) {
+	flock($FH, Fcntl::LOCK_UN());
+	close($FH);
+	undef $FH;
+    }
+}
+
+*finish = \&finished;
+
 sub DESTROY {
 
     my $self = shift;
 
     if ($self && ($FH || $FILE)) {
 	unless ($FH) {
-	    sysopen(FH, $FILE, O_RDWR()|O_CREAT()) or croak "Can't open $FILE: $!";
-	    flock(FH, Fcntl::LOCK_EX()) or croak "Can't flock file: $!";
+	    sysopen(FH, $FILE, Fcntl::O_RDWR() | Fcntl::O_CREAT())
+		or croak "Can't open $FILE: $!";
+	    flock(FH, Fcntl::LOCK_EX())
+		or croak "Can't flock file: $!";
 	    $FH = \*FH;
 	}
 	seek($FH, 0, 0);
 	unless ($RESET) {
-	    # need to rebuild our data, ugh.
+	    # need to rebuild our cryptosystem, ugh.
 	    $self->{_public} = ref $PK ? $PK : new Crypt::RSA::Key::Public::SSH
 		Filename => $PK || (File::HomeDir::home() . '/.ssh/identity.pub');
 	    $self->{_private} = ref $SK ? $SK : new Crypt::RSA::Key::Private::SSH
@@ -184,12 +193,12 @@ sub DESTROY {
 	delete $self->{_data};
     }
 
-    unless (exists $INC{'Inline/Files.pm'}) {
+    unless (exists $INC{'Inline/Files.pm'} || ! $FILE) {
 	flock($FH, Fcntl::LOCK_UN());
 	close($FH);
+	undef $FH;
     }
 
-    undef $FH;
 }
 
 1;
